@@ -1,13 +1,14 @@
 import express from 'express';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
-import { authRoute, messageRoute, notificationRoute, profileRoute } from './routes/index.js';
+import { authRoute, messageRoute, notificationRoute, profileRoute, uploadRoutes } from './routes/index.js';
 import session from 'express-session';
 import http from 'http';
 import { Server } from 'socket.io';
 import { verifyToken } from './middleware/authMiddleware.js';
 import Message from './models/messageModel.js';
 import Jwt from 'jsonwebtoken';
+import { ensureUploadDirectory } from './utils/fileUtils.js';
 
 dotenv.config();
 
@@ -18,6 +19,7 @@ const io = new Server(server);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+
 app.use(session({
     secret: process.env.SESSION_KEY,
     resave: false,
@@ -25,10 +27,10 @@ app.use(session({
     cookie: {
         secure: false,
         maxAge: 900000,
-    }
-}));
-
-const connectedUsers = new Map();
+        }
+        }));
+        
+        const connectedUsers = new Map();
 app.set('io', io);
 app.set('connectedUsers', connectedUsers);
 
@@ -37,9 +39,14 @@ app.use('/api/v1/message', verifyToken, messageRoute);
 app.use('/api/v1/profile', verifyToken, profileRoute);
 app.use('/api/v1/profile/notifications', verifyToken, notificationRoute);
 
+app.use('/api/v1/upload', uploadRoutes);
+
+
+ensureUploadDirectory();
+
 io.on('connection', async (socket) => {
     console.log('A user connected');
-
+    
     const token = socket.handshake.query.token || socket.handshake.headers['authorization'];
     if (!token) {
         console.log('No token provided');
