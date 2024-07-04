@@ -1,5 +1,6 @@
 import mongoose from "mongoose"
 import validator from "validator"
+import { likedProfileSchema } from "./likedProfileModel.js";
 
 const userSchema = new mongoose.Schema({
     username: {
@@ -42,10 +43,7 @@ const userSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User'
     }],
-    likedProfiles: [{
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'User'
-    }],
+    likedProfiles: [likedProfileSchema],
     favouriteProfiles: [{
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User'

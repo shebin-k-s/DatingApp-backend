@@ -1,5 +1,5 @@
 import express from 'express'
-import { addFavouriteProfile, editProfile, getFavouriteProfiles, getLikedProfiles, getPersonalDetails, getUser, likeProfile, removeFavouriteProfile, searchProfiles, unlikeProfile } from '../controllers/profileController.js'
+import { addFavouriteProfile, editProfile, getFavouriteProfiles, getLikedProfiles, getPersonalDetails, getProfilesWhoLikedMe, getUser, likeProfile, removeFavouriteProfile, searchProfiles, unlikeProfile } from '../controllers/profileController.js'
 
 
 const router = express.Router()
@@ -18,6 +18,9 @@ router.route('/unlike/:profileId')
 
 router.route('/likedProfiles')
     .get(getLikedProfiles)
+
+router.route('/profilelikedme')
+    .get(getProfilesWhoLikedMe)
 
 router.route("/edit")
     .put(editProfile)

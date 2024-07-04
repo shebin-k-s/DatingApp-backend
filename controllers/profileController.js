@@ -10,12 +10,16 @@ export const getPersonalDetails = async (req, res) => {
         const userId = req.user.userId;
         console.log(userId);
 
-        const user = await User.findById(userId).select('-fcmToken -location -__v');
+        const user = await User.findById(userId)
+            .select('-fcmToken -location -__v')
+            .populate('likedProfiles.userId', '_id')
+            .lean();
 
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
         }
-        console.log(user);
+        user.likedProfiles = user.likedProfiles.map(profile => profile.userId._id);
+
         return res.status(200).json(user);
     } catch (error) {
         console.error('Error fetching personal details:', error);
@@ -292,11 +296,10 @@ export const removeFavouriteProfile = async (req, res) => {
         res.status(500).json({ message: 'Server error', error: error.message });
     }
 }
-
 export const likeProfile = async (req, res) => {
     try {
-        const { profileId } = req.params
-        const userId = req.user.userId
+        const { profileId } = req.params;
+        const userId = req.user.userId;
 
         if (!profileId || !mongoose.Types.ObjectId.isValid(profileId)) {
             return res.status(400).json({ message: 'Invalid profile ID' });
@@ -306,103 +309,119 @@ export const likeProfile = async (req, res) => {
             return res.status(400).json({ message: 'Cannot like yourself' });
         }
 
-        const likedUser = await User.findById(profileId)
+        const likedUser = await User.findById(profileId);
         if (!likedUser) {
-            return res.status(404).json({ message: 'Profile not found' })
+            return res.status(404).json({ message: 'Profile not found' });
         }
 
-
-        const likerUser = await User.findOneAndUpdate(
-            { _id: userId, likedProfiles: { $ne: profileId } },
-            { $addToSet: { likedProfiles: profileId } },
-            { new: true }
-        );
+        const likerUser = await User.findById(userId);
         if (!likerUser) {
-            return res.status(400).json({ success: false, message: 'You have already liked this profile.' })
+            return res.status(404).json({ message: 'User not found' });
         }
+
+        if (likerUser.likedProfiles.some(profile => profile.userId.toString() === profileId)) {
+            return res.status(400).json({ success: false, message: 'You have already liked this profile.' });
+        }
+
+        likerUser.likedProfiles.push({ userId: profileId });
+        await likerUser.save();
 
         await createNotification(userId, profileId, 'LIKE', "Someone liked your profile!");
 
-        if (likedUser.likedProfiles.includes(userId)) {
-            likerUser.matches.push(profileId)
-            await likerUser.save()
-
-            likedUser.matches.push(userId)
-            await likedUser.save()
+        if (likedUser.likedProfiles.some(profile => profile.userId.toString() === userId)) {
+            if (!likerUser.matches.includes(profileId)) {
+                likerUser.matches.push(profileId);
+                await likerUser.save();
+            }
+            if (!likedUser.matches.includes(userId)) {
+                likedUser.matches.push(userId);
+                await likedUser.save();
+            }
 
             await createNotification(userId, profileId, 'MATCH', "You have a new match!");
             await createNotification(profileId, userId, 'MATCH', "You have a new match!");
         }
 
-        return res.status(200).json({ success: true, message: 'Profile liked successfully' })
-
+        return res.status(200).json({ success: true, message: 'Profile liked successfully' });
     } catch (error) {
         console.error('Error:', error);
         res.status(500).json({ message: 'Internal server error' });
     }
 };
-
 export const unlikeProfile = async (req, res) => {
-
     try {
         const { profileId } = req.params;
         const userId = req.user.userId;
+
         if (!profileId || !mongoose.Types.ObjectId.isValid(profileId)) {
             return res.status(400).json({ message: 'Invalid profile ID' });
         }
 
-        const unlikedUser = await User.findById(profileId)
+        const unlikedUser = await User.findById(profileId);
         if (!unlikedUser) {
             return res.status(404).json({ message: 'Profile not found' });
         }
 
-        const unlikerUser = await User.findOneAndUpdate(
-            { _id: userId, likedProfiles: profileId },
-            { $pull: { likedProfiles: profileId, matches: profileId } },
-            { new: true }
+        const unlikerUser = await User.findById(userId);
+        if (!unlikerUser) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        unlikerUser.likedProfiles = unlikerUser.likedProfiles.filter(
+            profile => profile.userId.toString() !== profileId
         );
 
-        if (!unlikerUser) {
-            return res.status(400).json({ success: false, message: 'You have not liked this profile.' })
-        }
+        unlikerUser.matches = unlikerUser.matches.filter(
+            matchId => matchId.toString() !== profileId
+        );
+        await unlikerUser.save();
 
         if (unlikedUser.matches.includes(userId)) {
-            unlikedUser.matches.pull(userId)
-            await unlikedUser.save()
-            await deleteNotification(userId, profileId, 'MATCH')
-            await deleteNotification(profileId, userId, 'MATCH')
-
-
+            unlikedUser.matches = unlikedUser.matches.filter(
+                matchId => matchId.toString() !== userId
+            );
+            await unlikedUser.save();
+            await deleteNotification(userId, profileId, 'MATCH');
+            await deleteNotification(profileId, userId, 'MATCH');
         }
-        await deleteNotification(userId, profileId, 'LIKE')
+
+        await deleteNotification(userId, profileId, 'LIKE');
 
         return res.status(200).json({ success: true, message: 'Profile unliked successfully' });
-
     } catch (error) {
         console.error('Error:', error);
         res.status(500).json({ message: 'Internal server error' });
     }
 };
-
-
-
 export const getLikedProfiles = async (req, res) => {
     try {
         const userId = req.user.userId;
-        const { page = 1, limit = 20 } = req.query
+        const { page = 1, limit = 20 } = req.query;
 
-        const user = await User.findById(userId).populate('likedProfiles');
+        const pageNum = parseInt(page);
+        const limitNum = parseInt(limit);
+
+        const user = await User.findById(userId)
+            .populate({
+                path: 'likedProfiles.userId',
+                select: 'username profilePic gender dateOfBirth bio address',
+                options: {
+                    skip: (pageNum - 1) * limitNum,
+                    limit: limitNum
+                }
+            })
+            .lean();
 
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        const pageNum = parseInt(page);
-        const limitNum = parseInt(limit);
-        const startIndex = (pageNum - 1) * limitNum;
-        const endIndex = pageNum * limitNum;
+        const likedProfiles = user.likedProfiles.map(profile => ({
+            ...profile.userId,
+            _id: profile.userId._id,
+            dateLiked: profile.dateLiked
+        }));
 
-        const likedProfiles = user.likedProfiles.slice(startIndex, endIndex);
         const totalProfiles = user.likedProfiles.length;
         const totalPages = Math.ceil(totalProfiles / limitNum);
         const hasNextPage = pageNum < totalPages;
@@ -424,3 +443,43 @@ export const getLikedProfiles = async (req, res) => {
     }
 };
 
+
+export const getProfilesWhoLikedMe = async (req, res) => {
+    try {
+        const userId = req.user.userId;
+
+        const users = await User.find({ 'likedProfiles.userId': userId })
+            .select('username profilePic likedProfiles')
+            .lean();
+
+        const likes = users.flatMap(user => {
+            const like = user.likedProfiles.find(profile => profile.userId.toString() === userId);
+            return {
+                userId: user._id,
+                username: user.username,
+                profilePic: user.profilePic,
+                dateLiked: like.dateLiked
+            };
+        });
+
+        likes.sort((a, b) => b.dateLiked - a.dateLiked);
+
+        const groupedLikes = likes.reduce((acc, like) => {
+            const date = like.dateLiked.toISOString().split('T')[0];
+            if (!acc[date]) {
+                acc[date] = [];
+            }
+            acc[date].push(like);
+            return acc;
+        }, {});
+
+        const result = Object.entries(groupedLikes)
+            .map(([date, profiles]) => ({ date, profiles }))
+            .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+        res.status(200).json({ profiles: result });
+    } catch (error) {
+        console.error('Error in getProfilesWhoLikedMe:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+};
