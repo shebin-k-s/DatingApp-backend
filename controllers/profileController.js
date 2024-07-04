@@ -66,7 +66,6 @@ export const editProfile = async (req, res) => {
     }
 };
 
-
 export const searchProfiles = async (req, res) => {
     try {
         const userId = req.user.userId;
@@ -104,27 +103,36 @@ export const searchProfiles = async (req, res) => {
             };
 
             profiles = await User.find(filter).select('username gender dateOfBirth bio profilePic address location').lean();
+            console.log(profiles.length);
 
-            const profileDistances = await Promise.all(profiles.map(async profile => {
-                const profileLocation = {
+            const batchSize = 25;
+            const profileDistances = [];
+
+            for (let i = 0; i < profiles.length; i += batchSize) {
+                const batch = profiles.slice(i, i + batchSize);
+                const batchLocations = batch.map(profile => ({
                     longitude: profile.location.coordinates[0],
                     latitude: profile.location.coordinates[1]
-                };
-                const roadDistance = await getRoadDistance(userLocation, profileLocation);
-                if (roadDistance !== null && roadDistance <= maxDistance) {
-                    const { location, ...profileWithoutLocation } = profile;
-                    return {
-                        ...profileWithoutLocation,
-                        distanceInKm: parseFloat(roadDistance.toFixed(2))
-                    };
-                }
-                return null;
-            }));
-            profiles = profileDistances.filter(Boolean).sort((a, b) => a.distanceInKm - b.distanceInKm);
+                }));
+
+                const distances = await getBatchRoadDistances(userLocation, batchLocations);
+
+                batch.forEach((profile, index) => {
+                    const distance = distances[index];
+                    if (distance !== null && distance <= maxDistance) {
+                        const { location, ...profileWithoutLocation } = profile;
+                        profileDistances.push({
+                            ...profileWithoutLocation,
+                            distanceInKm: parseFloat(distance.toFixed(2))
+                        });
+                    }
+                });
+            }
+
+            profiles = profileDistances.sort((a, b) => a.distanceInKm - b.distanceInKm);
             totalProfiles = profiles.length;
             profiles = profiles.slice((pageNum - 1) * limitNum, pageNum * limitNum);
         } else {
-            console.log(filter);
             profiles = await User.find(filter)
                 .select('username gender dateOfBirth bio profilePic address')
                 .skip((pageNum - 1) * limitNum)
@@ -133,11 +141,11 @@ export const searchProfiles = async (req, res) => {
 
             totalProfiles = await User.countDocuments(filter);
         }
-        console.log(profiles);
+        console.log(totalProfiles);
+
         const totalPages = Math.ceil(totalProfiles / limitNum);
         const hasNextPage = pageNum < totalPages;
         const hasPrevPage = pageNum > 1;
-
         return res.status(200).json({
             profiles,
             currentPage: pageNum,
@@ -153,13 +161,14 @@ export const searchProfiles = async (req, res) => {
         res.status(500).json({ message: 'Internal server error' });
     }
 };
-export async function getRoadDistance(start, end) {
-    const url = process.env.ORS_API_URL
+
+async function getBatchRoadDistances(start, ends) {
+    const url = process.env.ORS_API_URL;
 
     const data = {
         locations: [
             [start.longitude, start.latitude],
-            [end.longitude, end.latitude]
+            ...ends.map(end => [end.longitude, end.latitude])
         ],
         metrics: ["distance"],
         units: "km"
@@ -174,21 +183,20 @@ export async function getRoadDistance(start, end) {
 
     try {
         const response = await axios.post(url, data, config);
-        return response.data.distances[0][1];
+        return response.data.distances[0].slice(1);
     } catch (error) {
-        console.error('Error calculating ORS distance:', error);
+        console.error('Error calculating batch ORS distances:', error);
         if (error.response) {
             console.error('Response data:', error.response.data);
             console.error('Response status:', error.response.status);
         }
-        return null;
+        return ends.map(() => null);
     }
 }
 
-
 export const addFavouriteProfile = async (req, res) => {
     try {
-        const { profileId } = req.body
+        const { profileId } = req.params
         const userId = req.user.userId
 
 
@@ -278,7 +286,7 @@ export const removeFavouriteProfile = async (req, res) => {
         if (!updatedUser) {
             return res.status(404).json({ message: 'Profile not in favorite list' });
         }
-        res.json({ message: 'User removed from favorites', removedId: profileId });
+        return res.status(200).json({ message: 'User removed from favorites', removedId: profileId });
     } catch (error) {
         console.log(error);
         res.status(500).json({ message: 'Server error', error: error.message });
@@ -287,43 +295,43 @@ export const removeFavouriteProfile = async (req, res) => {
 
 export const likeProfile = async (req, res) => {
     try {
-        const { likedId } = req.body
+        const { profileId } = req.params
         const userId = req.user.userId
 
-        if (!likedId || !mongoose.Types.ObjectId.isValid(likedId)) {
+        if (!profileId || !mongoose.Types.ObjectId.isValid(profileId)) {
             return res.status(400).json({ message: 'Invalid profile ID' });
         }
 
-        if (userId === likedId) {
+        if (userId === profileId) {
             return res.status(400).json({ message: 'Cannot like yourself' });
         }
 
-        const likedUser = await User.findById(likedId)
+        const likedUser = await User.findById(profileId)
         if (!likedUser) {
             return res.status(404).json({ message: 'Profile not found' })
         }
 
 
         const likerUser = await User.findOneAndUpdate(
-            { _id: userId, likedProfiles: { $ne: likedId } },
-            { $addToSet: { likedProfiles: likedId } },
+            { _id: userId, likedProfiles: { $ne: profileId } },
+            { $addToSet: { likedProfiles: profileId } },
             { new: true }
         );
         if (!likerUser) {
             return res.status(400).json({ success: false, message: 'You have already liked this profile.' })
         }
 
-        await createNotification(userId, likedId, 'LIKE', "Someone liked your profile!");
+        await createNotification(userId, profileId, 'LIKE', "Someone liked your profile!");
 
         if (likedUser.likedProfiles.includes(userId)) {
-            likerUser.matches.push(likedId)
+            likerUser.matches.push(profileId)
             await likerUser.save()
 
             likedUser.matches.push(userId)
             await likedUser.save()
 
-            await createNotification(userId, likedId, 'MATCH', "You have a new match!");
-            await createNotification(likedId, userId, 'MATCH', "You have a new match!");
+            await createNotification(userId, profileId, 'MATCH', "You have a new match!");
+            await createNotification(profileId, userId, 'MATCH', "You have a new match!");
         }
 
         return res.status(200).json({ success: true, message: 'Profile liked successfully' })
@@ -337,21 +345,20 @@ export const likeProfile = async (req, res) => {
 export const unlikeProfile = async (req, res) => {
 
     try {
-        const { unlikedId } = req.body;
+        const { profileId } = req.params;
         const userId = req.user.userId;
-
-        if (!unlikedId || !mongoose.Types.ObjectId.isValid(unlikedId)) {
+        if (!profileId || !mongoose.Types.ObjectId.isValid(profileId)) {
             return res.status(400).json({ message: 'Invalid profile ID' });
         }
 
-        const unlikedUser = await User.findById(unlikedId)
+        const unlikedUser = await User.findById(profileId)
         if (!unlikedUser) {
             return res.status(404).json({ message: 'Profile not found' });
         }
 
         const unlikerUser = await User.findOneAndUpdate(
-            { _id: userId, likedProfiles: unlikedId },
-            { $pull: { likedProfiles: unlikedId, matches: unlikedId } },
+            { _id: userId, likedProfiles: profileId },
+            { $pull: { likedProfiles: profileId, matches: profileId } },
             { new: true }
         );
 
@@ -362,12 +369,12 @@ export const unlikeProfile = async (req, res) => {
         if (unlikedUser.matches.includes(userId)) {
             unlikedUser.matches.pull(userId)
             await unlikedUser.save()
-            await deleteNotification(userId, unlikedId, 'MATCH')
-            await deleteNotification(unlikedId, userId, 'MATCH')
+            await deleteNotification(userId, profileId, 'MATCH')
+            await deleteNotification(profileId, userId, 'MATCH')
 
 
         }
-        await deleteNotification(userId, unlikedId, 'LIKE')
+        await deleteNotification(userId, profileId, 'LIKE')
 
         return res.status(200).json({ success: true, message: 'Profile unliked successfully' });
 

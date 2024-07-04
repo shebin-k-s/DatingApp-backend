@@ -10,11 +10,11 @@ router.route('/')
 router.route('/getProfile/:profileId')
     .get(getUser)
 
-router.route('/like')
+router.route('/like/:profileId')
     .post(likeProfile)
 
-router.route('/unlkike')
-    .post(unlikeProfile)
+router.route('/unlike/:profileId')
+    .delete(unlikeProfile)
 
 router.route('/likedProfiles')
     .get(getLikedProfiles)
@@ -25,9 +25,9 @@ router.route("/edit")
 router.route("/search")
     .get(searchProfiles)
 
-router.route('/favourite')
+router.route('/favourite/')
     .get(getFavouriteProfiles)
-router.route('/addFavourite')
+router.route('/addFavourite/:profileId')
     .post(addFavouriteProfile)
 
 router.route('/removeFavourite/:profileId')
