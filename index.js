@@ -9,6 +9,12 @@ import { verifyToken } from './middleware/authMiddleware.js';
 import Message from './models/messageModel.js';
 import Jwt from 'jsonwebtoken';
 import { ensureUploadDirectory } from './utils/fileUtils.js';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 dotenv.config();
 
@@ -19,6 +25,7 @@ const io = new Server(server);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 app.use(session({
     secret: process.env.SESSION_KEY,
@@ -27,10 +34,10 @@ app.use(session({
     cookie: {
         secure: false,
         maxAge: 900000,
-        }
-        }));
-        
-        const connectedUsers = new Map();
+    }
+}));
+
+const connectedUsers = new Map();
 app.set('io', io);
 app.set('connectedUsers', connectedUsers);
 
@@ -46,7 +53,7 @@ ensureUploadDirectory();
 
 io.on('connection', async (socket) => {
     console.log('A user connected');
-    
+
     const token = socket.handshake.query.token || socket.handshake.headers['authorization'];
     if (!token) {
         console.log('No token provided');

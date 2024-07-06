@@ -105,7 +105,6 @@ export const searchProfiles = async (req, res) => {
                     ]
                 }
             };
-
             profiles = await User.find(filter).select('username gender dateOfBirth bio profilePic address location').lean();
             console.log(profiles.length);
 
@@ -449,15 +448,16 @@ export const getProfilesWhoLikedMe = async (req, res) => {
         const userId = req.user.userId;
 
         const users = await User.find({ 'likedProfiles.userId': userId })
-            .select('username profilePic likedProfiles')
+            .select('username profilePic dateOfBirth likedProfiles')
             .lean();
 
         const likes = users.flatMap(user => {
-            const like = user.likedProfiles.find(profile => profile.userId.toString() === userId);
+            const like = user.likedProfiles.find(like => like.userId.toString() === userId);
             return {
                 userId: user._id,
                 username: user.username,
                 profilePic: user.profilePic,
+                dateOfBirth: user.dateOfBirth,
                 dateLiked: like.dateLiked
             };
         });
@@ -477,7 +477,7 @@ export const getProfilesWhoLikedMe = async (req, res) => {
             .map(([date, profiles]) => ({ date, profiles }))
             .sort((a, b) => new Date(b.date) - new Date(a.date));
 
-        res.status(200).json({ profiles: result });
+        return res.status(200).json({ profilesLikedMe: result });
     } catch (error) {
         console.error('Error in getProfilesWhoLikedMe:', error);
         res.status(500).json({ message: 'Internal server error' });

@@ -78,8 +78,10 @@ export const verifyOTP = async (req, res) => {
             return res.status(400).json({ message: 'Invalid OTP' });
         }
         if (sessionData.isForLogin) {
-            const user = await User.findOne(userField);
-            console.log(user);
+            const user = await User.findOne(userField)
+                .populate('likedProfiles.userId', '_id')
+                .lean();
+
             const token = Jwt.sign({ userId: user._id }, process.env.JWT_TOKEN);
 
             req.session.destroy((err) => {
@@ -87,6 +89,9 @@ export const verifyOTP = async (req, res) => {
                     console.error('Error destroying session:', err);
                 }
             });
+            user.likedProfiles = user.likedProfiles.map(profile => profile.userId._id);
+            console.log(user);
+
             return res.status(200).json({
                 message: 'Login successful',
                 token,
