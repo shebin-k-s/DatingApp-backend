@@ -34,44 +34,52 @@ export const sendMessage = async (req, res) => {
     }
 }
 
-
 export const getMessagedProfiles = async (req, res) => {
     try {
-        const userId = req.user.userId
-        console.log(userId);
+        const userId = req.user.userId;
+
         const messages = await Message.find({
             $or: [{ sender: userId }, { receiver: userId }]
-        }).sort({ sendAt: -1 })
+        }).sort({ sendAt: -1 });
 
         const uniqueUsers = {};
         messages.forEach(message => {
             const otherUserId = message.sender.toString() !== userId.toString() ? message.sender.toString() : message.receiver.toString();
             if (!uniqueUsers[otherUserId]) {
+
                 uniqueUsers[otherUserId] = {
                     userId: otherUserId,
                     latestMessage: message.message,
-                    latestMessageSendAt: message.sendAt
+                    latestMessageSendAt: message.sendAt,
+                    messageStatus: message.status,
+                    unreadCount: 0
                 };
             }
+            if (message.receiver.toString() === userId.toString() && message.status != 'seen') {
+                uniqueUsers[otherUserId].unreadCount++;
+            }
         });
-        const userIdsArray = Object.keys(uniqueUsers);
 
+        const userIdsArray = Object.keys(uniqueUsers);
         const profiles = await User.find(
             {
                 _id: { $in: userIdsArray }
             },
             { username: 1, profilePic: 1 }
-        )
+        );
+
         const result = userIdsArray.map(id => {
-            const profile = profiles.find(profile => profile._id.toString() === id)
+            const profile = profiles.find(profile => profile._id.toString() === id);
             return {
                 profile,
                 latestMessage: uniqueUsers[id].latestMessage,
-                latestMessageSendAt: uniqueUsers[id].latestMessageSendAt
-            }
-        })
+                latestMessageSendAt: uniqueUsers[id].latestMessageSendAt,
+                messageStatus: uniqueUsers[id].messageStatus,
+                unreadCount: uniqueUsers[id].unreadCount
+            };
+        });
 
-        res.status(200).json({ profiles: result });
+        res.status(200).json({ messagedProfiles: result });
     } catch (error) {
         res.status(400).json({ error: error.message });
     }
