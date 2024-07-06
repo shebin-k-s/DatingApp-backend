@@ -1,12 +1,14 @@
 import Message from "../models/messageModel.js"
 import User from "../models/userModel.js"
+import { DateTime } from "luxon"
 
 export const sendMessage = async (req, res) => {
     try {
-        const { receiver, message } = req.body
+        const { profileId, message } = req.body
         const sender = req.user.userId
-
-        let receiverExist = await User.findById(receiver)
+        console.log(sender);
+        console.log(profileId);
+        let receiverExist = await User.findById(profileId)
 
         if (!receiverExist) {
             return res.status(400).json({ message: "Receiver doesn't exist" })
@@ -14,23 +16,22 @@ export const sendMessage = async (req, res) => {
 
         const newMessage = new Message({
             sender,
-            receiver,
+            receiver: profileId,
             message
         })
 
         const io = req.app.get('io');
         const connectedUsers = req.app.get('connectedUsers');
-        if (connectedUsers.has(receiver)) {
-            newMessage.status = 'received';
-            io.to(connectedUsers.get(receiver)).emit('newMessage', newMessage);
-        }
-        if (connectedUsers.has(sender)) {
-            io.to(connectedUsers.get(sender)).emit('newMessage', newMessage);
+        if (connectedUsers.has(profileId)) {
+            newMessage.status = 'seen';
+            io.to(connectedUsers.get(profileId)).emit('newMessage', newMessage);
         }
         await newMessage.save()
-        res.status(201).json(newMessage);
+        console.log(newMessage);
+        return res.status(201).json(newMessage);
     } catch (error) {
-        res.status(400).json({ error: error.message });
+        console.log(error);
+        return res.status(400).json({ error: error.message });
     }
 }
 
@@ -85,24 +86,44 @@ export const getMessagedProfiles = async (req, res) => {
     }
 };
 
+
 export const getConversation = async (req, res) => {
     try {
-        const userId = req.user.userId
-        const { recipientId } = req.params
-        const recipientExist = await User.findById(recipientId);
+        const userId = req.user.userId;
+        const { profileId } = req.params;
+
+        const recipientExist = await User.findById(profileId);
         if (!recipientExist) {
             return res.status(400).json({ message: "The user you're trying to converse with doesn't exist" });
         }
 
         const messages = await Message.find({
             $or: [
-                { sender: userId, receiver: recipientId },
-                { sender: recipientId, receiver: userId }
+                { sender: userId, receiver: profileId },
+                { sender: profileId, receiver: userId }
             ]
         }).sort({ sendAt: 1 });
 
-        res.status(200).json({ messages: messages });
+        const groupedMessages = messages.reduce((acc, message) => {
+            const istDate = DateTime.fromJSDate(message.sendAt, { zone: 'Asia/Kolkata' }).toISODate();
+
+            if (!acc[istDate]) {
+                acc[istDate] = [];
+            }
+            acc[istDate].push(message);
+            return acc;
+        }, {});
+
+        const conversationByDate = Object.keys(groupedMessages).map(date => ({
+            date,
+            messages: groupedMessages[date]
+        })).reverse();
+
+        return res.status(200).json({
+            conversation: conversationByDate,
+        });
     } catch (error) {
-        res.status(400).json({ error: error.message });
+        console.log(error);
+        return res.status(400).json({ error: error.message });
     }
 };

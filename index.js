@@ -50,7 +50,6 @@ app.use('/api/v1/upload', uploadRoutes);
 
 
 ensureUploadDirectory();
-
 io.on('connection', async (socket) => {
     console.log('A user connected');
 
@@ -63,19 +62,34 @@ io.on('connection', async (socket) => {
     try {
         const decodedToken = Jwt.verify(token, process.env.JWT_TOKEN);
         const userId = decodedToken.userId;
-        connectedUsers.set(userId, socket.id);
+        
+        const initializationComplete = new Promise(async (resolve) => {
+            connectedUsers.set(userId, socket.id);
 
-        try {
-            const messagesToUpdate = await Message.updateMany(
-                { receiver: userId, status: 'sent' },
-                { $set: { status: 'received' } }
-            );
-            console.log(`Updated ${messagesToUpdate.modifiedCount} messages to "received" for user ${userId}`);
-        } catch (error) {
-            console.log(error);
-        }
+            try {
+                const messagesToUpdate = await Message.updateMany(
+                    { receiver: userId, status: 'sent' },
+                    { $set: { status: 'received' } }
+                );
+                console.log(`Updated ${messagesToUpdate.modifiedCount} messages to "received" for user ${userId}`);
+            } catch (error) {
+                console.log(error);
+            }
+
+            resolve();
+        });
+
+        await initializationComplete;
+
+        socket.isReady = true;
 
         socket.on('messageSeen', async (receiverId) => {
+            if (!socket.isReady) {
+                console.log('Socket not ready, ignoring messageSeen event');
+                return;
+            }
+
+            console.log(`id : ${receiverId}`);
             try {
                 const result = await Message.updateMany(
                     { sender: receiverId, receiver: userId, status: { $ne: 'seen' } },
@@ -95,6 +109,9 @@ io.on('connection', async (socket) => {
             });
             console.log('A user disconnected');
         });
+
+        socket.emit('ready');
+
     } catch (error) {
         console.log('Failed to authenticate token');
         return socket.disconnect();

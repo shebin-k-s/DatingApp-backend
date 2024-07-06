@@ -10,7 +10,7 @@ router.route('/send')
 router.route('/profiles')
     .get(getMessagedProfiles)
 
-router.route('/conversation/:recipientId')
+router.route('/conversation/:profileId')
     .get(getConversation)
 
 
