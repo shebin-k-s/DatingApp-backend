@@ -5,12 +5,11 @@ import axios from "axios";
 import { createNotification, deleteNotification } from "./notificationController.js";
 
 
-export const getPersonalDetails = async (req, res) => {
+export const getProfileDetails = async (req, res) => {
     try {
-        const userId = req.user.userId;
-        console.log(userId);
+        const { profileId } = req.params;
 
-        const user = await User.findById(userId)
+        const user = await User.findById(profileId)
             .select('-fcmToken -location -__v')
             .populate('likedProfiles.userId', '_id')
             .lean();
@@ -31,6 +30,7 @@ export const getUser = async (req, res) => {
     try {
 
         const { profileId } = req.params
+        console.log(profileId);
 
         const user = await User.findById(profileId).select('-_id -__v -likedProfiles -favouriteProfiles -matches');
 
@@ -38,7 +38,7 @@ export const getUser = async (req, res) => {
             return res.status(404).json({ message: 'User not found' });
         }
         console.log(user);
-        return res.status(200).json({ user });
+        return res.status(200).json(user);
     } catch (error) {
         console.error('Error fetching personal details:', error);
         res.status(500).json({ message: 'Internal server error' });
@@ -74,8 +74,6 @@ export const searchProfiles = async (req, res) => {
     try {
         const userId = req.user.userId;
         const { minAge, maxAge, gender, location, maxDistance = 30, page = 1, limit = 20 } = req.query;
-
-        console.log(req.query);
         const filter = { _id: { $ne: userId } };
         const pageNum = parseInt(page);
         const limitNum = parseInt(limit);
@@ -144,7 +142,6 @@ export const searchProfiles = async (req, res) => {
 
             totalProfiles = await User.countDocuments(filter);
         }
-        console.log(totalProfiles);
 
         const totalPages = Math.ceil(totalProfiles / limitNum);
         const hasNextPage = pageNum < totalPages;

@@ -213,7 +213,6 @@ export const registerUser = async (req, res) => {
             address,
             location
         });
-        console.log(newUser);
         await newUser.save();
         const token = Jwt.sign({ userId: newUser._id }, process.env.JWT_TOKEN);
         req.session.destroy((err) => {
@@ -231,6 +230,7 @@ export const registerUser = async (req, res) => {
         return res.status(500).json({ message: 'Internal server error' });
     }
 };
+
 
 export async function geocodeAddress(address, retries = 3) {
     for (let attempt = 1; attempt <= retries; attempt++) {
@@ -256,3 +256,4 @@ export async function geocodeAddress(address, retries = 3) {
         }
     }
 }
+
