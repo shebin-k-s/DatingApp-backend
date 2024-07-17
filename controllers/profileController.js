@@ -44,13 +44,12 @@ export const getUser = async (req, res) => {
         res.status(500).json({ message: 'Internal server error' });
     }
 };
-
 export const editProfile = async (req, res) => {
     try {
         const userId = req.user.userId
-
-        const { username, profilePic, gender, dateOfBirth, bio, preference, address } = req.body
+        const { username, profilePic, gender, dateOfBirth, bio, preference, address, photos } = req.body
         console.log(req.body);
+
         const updatedProfile = {
             username,
             profilePic,
@@ -60,10 +59,22 @@ export const editProfile = async (req, res) => {
             preference,
             address
         }
+
+        if (photos && Array.isArray(photos)) {
+            const user = await User.findById(userId);
+            if (user.photos) {
+                updatedProfile.photos = [...user.photos, ...photos];
+            } else {
+                updatedProfile.photos = photos;
+            }
+        }
+        console.log("updated user");
+        console.log(updatedProfile);
+
         const updatedUser = await User.findByIdAndUpdate(userId, updatedProfile, { new: true });
         console.log(updatedUser);
 
-        res.status(200).json({ message: 'Profile updated successfully', profile: updatedUser });
+        res.status(200).json({ message: 'Profile updated successfully', profile: updatedProfile });
     } catch (error) {
         console.error('Error:', error);
         res.status(500).json({ message: 'Internal server error' });
@@ -74,6 +85,8 @@ export const searchProfiles = async (req, res) => {
     try {
         const userId = req.user.userId;
         const { minAge, maxAge, gender, location, maxDistance = 30, page = 1, limit = 20 } = req.query;
+
+        console.log(req.query);
         const filter = { _id: { $ne: userId } };
         const pageNum = parseInt(page);
         const limitNum = parseInt(limit);
