@@ -62,9 +62,9 @@ io.on('connection', async (socket) => {
     try {
         const decodedToken = Jwt.verify(token, process.env.JWT_TOKEN);
         const userId = decodedToken.userId;
-        
+
         const initializationComplete = new Promise(async (resolve) => {
-            connectedUsers.set(userId, socket.id);
+            connectedUsers.set(userId, { socketId: socket.id, interactingWith: null });
 
             try {
                 const messagesToUpdate = await Message.updateMany(
@@ -81,7 +81,36 @@ io.on('connection', async (socket) => {
 
         await initializationComplete;
 
+
         socket.isReady = true;
+        
+        socket.on('startInteraction', (interactingUserId) => {
+            if (!socket.isReady) {
+                console.log('Socket not ready, ignoring startInteraction event');
+                return;
+            }
+
+            const userData = connectedUsers.get(userId);
+            if (userData) {
+                userData.interactingWith = interactingUserId;
+                connectedUsers.set(userId, userData);
+            }
+            console.log(`User ${userId} started interacting with ${interactingUserId}`);
+        });
+
+        socket.on('stopInteraction', () => {
+            if (!socket.isReady) {
+                console.log('Socket not ready, ignoring stopInteraction event');
+                return;
+            }
+
+            const userData = connectedUsers.get(userId);
+            if (userData) {
+                userData.interactingWith = null;
+                connectedUsers.set(userId, userData);
+            }
+            console.log(`User ${userId} stopped interacting`);
+        });
 
         socket.on('messageSeen', async (receiverId) => {
             if (!socket.isReady) {
