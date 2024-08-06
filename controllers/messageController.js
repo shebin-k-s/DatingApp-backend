@@ -23,11 +23,17 @@ export const sendMessage = async (req, res) => {
         const io = req.app.get('io');
         const connectedUsers = req.app.get('connectedUsers');
         if (connectedUsers.has(profileId)) {
-            newMessage.status = 'seen';
-            io.to(connectedUsers.get(profileId)).emit('newMessage', newMessage);
+            const receiverData = connectedUsers.get(profileId);
+            if (receiverData.interactingWith === sender) {
+                newMessage.status = 'seen';
+            } else {
+                newMessage.status = 'received';
+            }
+        } else {
+            newMessage.status = 'sent';
         }
+        io.to(receiverData.socketId).emit('newMessage', newMessage);
         await newMessage.save()
-        console.log(newMessage);
         return res.status(201).json(newMessage);
     } catch (error) {
         console.log(error);
