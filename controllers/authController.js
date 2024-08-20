@@ -241,6 +241,10 @@ export async function geocodeAddress(address, retries = 3) {
                     format: 'json',
                     limit: 1
                 },
+                headers: {
+                    'User-Agent': `RenderBackend/1.0 ${process.env.SMTP_USER}`,
+                    'Accept': 'application/json',
+                  },
             });
             if (response.data && response.data.length > 0) {
                 const { lat, lon } = response.data[0];
