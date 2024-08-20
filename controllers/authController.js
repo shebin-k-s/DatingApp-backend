@@ -250,6 +250,7 @@ export async function geocodeAddress(address, retries = 3) {
         } catch (error) {
             console.error(`Geocoding attempt ${attempt} failed:`);
             if (attempt === retries) {
+                console.log(error);
                 throw new Error('Unable to geocode address after multiple attempts');
             }
             await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
